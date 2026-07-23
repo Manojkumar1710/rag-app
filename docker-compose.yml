@@ -1,0 +1,140 @@
+version: "3.9"
+
+networks:
+  rag-network:
+    driver: bridge
+
+volumes:
+  qdrant-data:
+  documents-data:
+  images-data:
+
+services:
+  qdrant:
+    image: qdrant/qdrant:v1.11.3
+    container_name: rag-qdrant
+    ports:
+      - "${QDRANT_PORT:-6333}:6333"
+    volumes:
+      - qdrant-data:/qdrant/storage
+    networks:
+      - rag-network
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/localhost/6333' || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  embedding-server:
+    build:
+      context: ./embedding-server
+    container_name: rag-embedding-server
+    environment:
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    ports:
+      - "${EMBEDDING_SERVER_PORT:-8001}:8001"
+    networks:
+      - rag-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
+
+  indexing-service:
+    build:
+      context: ./indexing-service
+    container_name: rag-indexing-service
+    environment:
+      - EMBEDDING_SERVER_URL=${EMBEDDING_SERVER_URL:-http://embedding-server:8001}
+      - QDRANT_URL=${QDRANT_URL:-http://qdrant:6333}
+      - IMAGE_STORAGE_DIR=/data/images
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    ports:
+      - "${INDEXING_SERVER_PORT:-8002}:8002"
+    volumes:
+      - images-data:/data/images
+    depends_on:
+      qdrant:
+        condition: service_healthy
+      embedding-server:
+        condition: service_healthy
+    networks:
+      - rag-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8002/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./backend
+    container_name: rag-backend
+    environment:
+      - QDRANT_URL=${QDRANT_URL:-http://qdrant:6333}
+      - EMBEDDING_SERVER_URL=${EMBEDDING_SERVER_URL:-http://embedding-server:8001}
+      - INDEXING_SERVER_URL=${INDEXING_SERVER_URL:-http://indexing-service:8002}
+      - LLM_PROVIDER=${LLM_PROVIDER:-mock}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen2.5-coder:7b}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-1.5-flash}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o-mini}
+      - CHUNK_SIZE=${CHUNK_SIZE:-800}
+      - CHUNK_OVERLAP=${CHUNK_OVERLAP:-120}
+      - HYBRID_SEMANTIC_WEIGHT=${HYBRID_SEMANTIC_WEIGHT:-0.6}
+      - HYBRID_KEYWORD_WEIGHT=${HYBRID_KEYWORD_WEIGHT:-0.4}
+      - SEARCH_TOP_K=${SEARCH_TOP_K:-5}
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:5173}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - DOCUMENT_STORAGE_DIR=/data/documents
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    volumes:
+      - documents-data:/data/documents
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      qdrant:
+        condition: service_healthy
+      embedding-server:
+        condition: service_healthy
+      indexing-service:
+        condition: service_healthy
+    networks:
+      - rag-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_BACKEND_URL: ${VITE_BACKEND_URL:-http://localhost:8000}
+    container_name: rag-frontend
+    ports:
+      - "${FRONTEND_PORT:-5173}:5173"
+    depends_on:
+      - backend
+    networks:
+      - rag-network
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost:5173/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped

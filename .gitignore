@@ -1,0 +1,17 @@
+.env
+node_modules/
+dist/
+__pycache__/
+*.pyc
+.DS_Store
+*.egg-info/
+.venv/
+*/data/
+data/
+*.pt
+*.pth
+*.bin
+*.onnx
+chroma_db/
+*.sqlite3
+*.tsbuildinfo
