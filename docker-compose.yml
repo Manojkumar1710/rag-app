@@ -8,6 +8,7 @@ volumes:
   qdrant-data:
   documents-data:
   images-data:
+  ollama-data:
 
 services:
   qdrant:
@@ -25,6 +26,23 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: rag-ollama
+    ports:
+      - "11435:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    networks:
+      - rag-network
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/localhost/11434' || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
     restart: unless-stopped
 
   embedding-server:
@@ -82,7 +100,7 @@ services:
       - EMBEDDING_SERVER_URL=${EMBEDDING_SERVER_URL:-http://embedding-server:8001}
       - INDEXING_SERVER_URL=${INDEXING_SERVER_URL:-http://indexing-service:8002}
       - LLM_PROVIDER=${LLM_PROVIDER:-mock}
-      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://ollama:11434}
       - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen2.5-coder:7b}
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
       - GEMINI_MODEL=${GEMINI_MODEL:-gemini-1.5-flash}
@@ -100,14 +118,14 @@ services:
       - "${BACKEND_PORT:-8000}:8000"
     volumes:
       - documents-data:/data/documents
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     depends_on:
       qdrant:
         condition: service_healthy
       embedding-server:
         condition: service_healthy
       indexing-service:
+        condition: service_healthy
+      ollama:
         condition: service_healthy
     networks:
       - rag-network
