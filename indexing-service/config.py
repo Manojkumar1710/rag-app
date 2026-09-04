@@ -11,3 +11,4 @@ class Settings:
     OCR_LANGUAGES: list[str] = os.getenv("OCR_LANGUAGES", "en").split(",")
 
 settings = Settings()
+
