@@ -25,7 +25,7 @@ export default function Sidebar() {
             className={({ isActive }) => `sidebar-link${isActive ? " active" : ""}`}
           >
             <Icon size={16} />
-            {label}
+            <span>{label}</span>
           </NavLink>
         ))}
       </nav>

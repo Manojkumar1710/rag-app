@@ -8,7 +8,6 @@ volumes:
   qdrant-data:
   documents-data:
   images-data:
-  ollama-data:
 
 services:
   qdrant:
@@ -34,7 +33,7 @@ services:
     ports:
       - "11435:11434"
     volumes:
-      - ollama-data:/root/.ollama
+      - C:/Users/kumar/.ollama:/root/.ollama
     networks:
       - rag-network
     healthcheck:
